@@ -39,7 +39,7 @@ class ChromeDinoEnv(gym.Env):
 
         _chrome_options = webdriver.ChromeOptions()
         _chrome_options.add_argument("--mute-audio")
-        # _chrome_options.add_argument("--disable-gpu") # if running on Windows
+        _chrome_options.add_argument("--disable-gpu") # if running on Windows
 
         self._driver = webdriver.Chrome(
             executable_path=self.chromedriver_path,

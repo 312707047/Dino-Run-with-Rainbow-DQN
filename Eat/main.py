@@ -195,8 +195,8 @@ tf.random.set_seed(1)
 #backend.set_session(tf.Session(config=tf.ConfigProto(gpu_options=gpu_options)))
 
 # Create models folder
-if not os.path.isdir('models'):
-    os.makedirs('models')
+if not os.path.isdir('./models'):
+    os.makedirs('./models')
 
 
 class ModifiedTensorBoard(TensorBoard):
@@ -369,7 +369,7 @@ for episode in tqdm(range(1, EPISODES + 1), ascii=True, unit='episodes'):
         # Transform new continous state to new discrete state and count reward
         episode_reward += reward
 
-        if SHOW_PREVIEW and not episode % AGGREGATE_STATS_EVERY:
+        if SHOW_PREVIEW:
             env.render()
 
         # Every step we update replay memory and train main network
