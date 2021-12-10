@@ -4,6 +4,9 @@ import matplotlib.pyplot as plt
 import random
 from collections import deque
 from utils import TradingGraph
+from Agents.PPOAgent import Actor_model, Critic_model
+from tensorboardX import SummaryWriter
+from tensorflow.keras.optimizers import Adam
 
 class CustomEnv:
     # A custom Bitcoin trading environment
@@ -26,7 +29,23 @@ class CustomEnv:
 
         # State size contains Market+Orders history for the last lookback_window_size steps
         self.state_size = (self.window_size, 10)
-
+        
+        # Neural Network settings
+        self.lr = 0.0001
+        self.epochs = 1
+        self.normalize_value = 100000
+        self.optimizer = Adam
+        
+        self.Actor = Actor_model(input_shape=self.state_size,
+                                 action_space=self.action_space[0],
+                                 lr=self.lr, optimizer=self.optimizer)
+        self.Critic = Critic_model(input_shape=self.state_size,
+                                 action_space=self.action_space[0],
+                                 lr=self.lr, optimizer=self.optimizer)
+    
+    def create_writer(self):
+        self.replay_count = 0
+        self.writer = SummaryWriter(comment='Crypto_trader')
     # Reset the state of the environment to an initial state
     def reset(self, env_steps_size = 0):
         self.visualization = TradingGraph(Render_range=self.Render_range) # init visualization
