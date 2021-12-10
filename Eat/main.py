@@ -292,6 +292,7 @@ class DQNAgent:
         # Get current states from minibatch, then query NN model for Q values
         current_states = np.array([transition[0] for transition in minibatch])/255
         current_qs_list = self.model.predict(current_states)
+        # print(current_qs_list) [[a, b, c, ...]] a, b, c shape=(9,)
 
         # Get future states from minibatch, then query NN model for Q values
         # When using target network, query it, otherwise main network should be queried
@@ -314,6 +315,7 @@ class DQNAgent:
 
             # Update Q value for given state
             current_qs = current_qs_list[index]
+            # print(current_qs)
             current_qs[action] = new_q
 
             # And append to our training data
@@ -351,6 +353,7 @@ for episode in tqdm(range(1, EPISODES + 1), ascii=True, unit='episodes'):
 
     # Reset environment and get initial state
     current_state = env.reset()
+    # print(current_state.shape) shape:(10, 10, 3)
 
     # Reset flag and start iterating until episode ends
     done = False
