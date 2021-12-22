@@ -1,29 +1,30 @@
-import torch as T
-import torch.nn as nn
+import tensorflow as tf
+from tensorflow.keras import layers, Model, Input
+from tensorflow.keras.optimizers import RMSprop
+from utils import huber_loss
 
-class Conv(nn.Module):
-    def __init__(self):
-        super().__init__()
-        '''input size: (80, 160, 4)'''
-        self.conv1 = nn.Conv2d(4, 32, 8, 4, padding='same')
-        self.conv2 = nn.Conv2d(32, 64, 4, 2, padding='same')
-        self.conv3 = nn.Conv2d(64, 64, 3, 1, padding='same')
-        self.bn1 = nn.BatchNorm2d(32)
-        self.bn2 = nn.BatchNorm2d(64)
-        self.bn3 = nn.BatchNorm2d(64)
-    
-    def forward(self, x):
-        x = T.relu(self.bn1(self.conv1(x)))
-        x = T.relu(self.bn2(self.conv2(x)))
-        x = T.relu(self.bn3(self.conv3(x)))
-        return x.view(x.size(0), -1)
+def ConvBlock(x, batch_norm=False):
+    if batch_norm:
+        x = layers.Conv2D(32, 8, 4, activation='relu')(x)
+        x = layers.BatchNormalization()(x)
+        x = layers.Conv2D(64, 4, 2, activation='relu')(x)
+        x = layers.BatchNormalization()(x)
+        x = layers.Conv2D(64, 3, 1, activation='relu')(x)
+        x = layers.BatchNormalization()(x)
+    else:
+        x = layers.Conv2D(32, 8, 4, activation='relu')(x)
+        x = layers.Conv2D(64, 4, 2, activation='relu')(x)
+        x = layers.Conv2D(64, 3, 1, activation='relu')(x)
 
-class Network(Conv):
-    def __init__(self, n_action):
-        self.dense = nn.Linear(3136, 512)
-        self.pred = nn.Linear(512, n_action)
+    return layers.Flatten()(x)
+
+def Net(n_actions, lr, batch_norm=False):
+    input = Input(shape=(80, 160, 4))
+    x = ConvBlock(input, batch_norm)
+    x = layers.Dense(512, activation='relu')(x)
+    output = layers.Dense(n_actions, activation='linear')(x)
+    model = Model(input, output)
+    model.compile(optimizer=RMSprop(learning_rate=lr),
+                  loss=huber_loss)
     
-    def forward(self, x):
-        x = super().forward(x)
-        x = T.relu(self.dense(x))
-        return self.pred(x)
+    return model
