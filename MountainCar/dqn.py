@@ -45,7 +45,8 @@ class DQN:
         
     def _create_model(self):
         input = Input(shape=(env.reset().shape))
-        x = layers.Dense(128, activation='relu')(input)
+        x = layers.Dense(32, activation='relu')(input)
+        x = layers.Dense(32, activation='relu')(x)
         output = layers.Dense(self.n_action, activation='linear')(x)
         model = Model(input, output)
         model.compile(optimizer=RMSprop(learning_rate=LR),
@@ -70,7 +71,7 @@ class DQN:
         states = np.array([transition[0] for transition in replay_batch])
         next_states = np.array([transition[2] for transition in replay_batch])
         
-        Q = self.policy_model.predict((states))
+        Q = self.policy_model.predict(states)
         next_Q = self.target_model.predict(next_states)
         
         for i, (state, action, next_state, reward) in enumerate(replay_batch):

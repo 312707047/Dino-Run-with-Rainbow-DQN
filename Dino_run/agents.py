@@ -39,30 +39,17 @@ class DQNAgent(HyperParam):
         
         batch = random.sample(self.replay_memory, self.BATCH_SIZE)
         states = np.array([transition[0] for transition in batch])/255
-        qs_list = self.policy_model.predict(states)
         
         new_states = np.array([transition[3] for transition in batch])/255
+        
+        qs_list = self.policy_model.predict(states)
         new_qs_list = self.target_model.predict(new_states)
         
-        X, y = [], []
-        
         for index, (state, action, reward, next_state, done)in enumerate(batch):
-            if not done:
-                max_next_q = np.max(new_qs_list[index])
-                new_q = reward + self.GAMMA * max_next_q
-            else:
-                new_q = reward
+            qs_list[index][action] = (1 - self.GAMMA) * qs_list[index][action] + self.GAMMA * (reward + np.amax(new_qs_list[index])*0.95)
         
-            qs = qs_list[index]
-            qs[action] = new_q
-            
-            X.append(state)
-            y.append(qs)
+        self.policy_model.fit(states, qs_list, verbose=0)
         
-        self.policy_model.fit(np.array(X)/255, np.array(y),
-                              batch_size=self.BATCH_SIZE,
-                              verbose=0,
-                              shuffle=False)
         if terminal:
             self.target_update_counter += 1
         
