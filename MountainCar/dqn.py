@@ -18,7 +18,7 @@ EPS_DECAY = 0.999
 MIN_EPS = 0.01
 BATCH_SIZE = 32
 GAMMA = 0.99
-UPDATE_EVERY = 200
+UPDATE_EVERY = 5
 SHOW_EVERY = 10
 
 class DQN:
@@ -54,18 +54,13 @@ class DQN:
         return model
     
     def _choose_action(self, state):
-        if np.random.random() > max(self.epsilon * EPS_DECAY ** self.step, MIN_EPS):
+        if np.random.random() < max(self.epsilon * EPS_DECAY ** self.step, MIN_EPS):
             return np.argmax(self.policy_model.predict(tf.expand_dims(state, axis=0))[0])
         return self.env.action_space.sample()
     
     def _optimize(self):
         if len(self._replay_memory) < BATCH_SIZE:
             return
-        
-        self.step += 1
-        
-        if self.step % UPDATE_EVERY == 0:
-            self.target_model.set_weights(self.policy_model.get_weights())
         
         replay_batch = random.sample(self._replay_memory, BATCH_SIZE)
         states = np.array([transition[0] for transition in replay_batch])
@@ -113,6 +108,9 @@ class DQN:
                 if next_state[0] >= self.env.goal_position:
                     print(f'Made it on episode: {episode}')
                 state = next_state
+            
+            if episode % UPDATE_EVERY == 0:
+                self.target_model.set_weights(self.policy_model.get_weights())
             
             score_list.append(score)
             print('episode:', episode, 'score:', score)

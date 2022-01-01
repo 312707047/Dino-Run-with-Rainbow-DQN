@@ -4,22 +4,23 @@ import itertools
 import tensorflow as tf
 import numpy as np
 
-from model import Net
+from model import Net, DuelNet
 from utils import LinearAnneal
 from parameters import HyperParam
 
-class DQNAgent(HyperParam):
+class DQN(HyperParam):
     def __init__(self, n_actions, batch_norm=False):
         self.n_actions = n_actions
         self.batch_norm = batch_norm
         
-        self.policy_model = Net(n_actions, self.LR, batch_norm)
-        self.target_model = Net(n_actions, self.LR, batch_norm)
-        self.target_model.set_weights(self.policy_model.get_weights())
-        
+        self._init_model()
         self.replay_memory = deque(maxlen=self.MEMORY_SIZE)
         self.epsilon = LinearAnneal(self.EPS_INIT, self.EPS_END, self.EXPLORE_STEP)
-        self.target_update_counter = 0
+    
+    def _init_model(self):
+        self.policy_model = Net(self.n_actions, self.LR, self.batch_norm)
+        self.target_model = Net(self.n_actions, self.LR, self.batch_norm)
+        self.target_model.set_weights(self.policy_model.get_weights())
     
     def _update_replay_memory(self, transitions):
         self.replay_memory.append(transitions)
@@ -30,11 +31,10 @@ class DQNAgent(HyperParam):
     def _choose_action(self, state):
         if random.random() > self.epsilon.anneal():
             return np.argmax(self._get_qs(state))
-        else:
-            return np.random.randint(0, self.n_actions)
+        return np.random.randint(0, self.n_actions)
     
-    def _optimize(self, terminal):
-        if len(self.replay_memory) < self.BATCH_SIZE:
+    def _optimize(self):
+        if len(self.replay_memory) < self.MIN_MEMORY:
             return
         
         batch = random.sample(self.replay_memory, self.BATCH_SIZE)
@@ -45,35 +45,80 @@ class DQNAgent(HyperParam):
         qs_list = self.policy_model.predict(states)
         new_qs_list = self.target_model.predict(new_states)
         
-        for index, (state, action, reward, next_state, done)in enumerate(batch):
-            qs_list[index][action] = (1 - self.GAMMA) * qs_list[index][action] + self.GAMMA * (reward + np.amax(new_qs_list[index])*0.95)
+        for index, (state, action, reward, next_state) in enumerate(batch):
+            qs_list[index][action] = (1 - self.GAMMA) * qs_list[index][action] + self.GAMMA * (reward + np.max(new_qs_list[index]) * self.DISCOUNT)
         
         self.policy_model.fit(states, qs_list, verbose=0)
-        
-        if terminal:
-            self.target_update_counter += 1
-        
-        if self.target_update_counter > self.TARGET_UPDATE:
-            self.target_model.set_weights(self.policy_model.get_weights())
-            self.target_update_counter = 0
     
-    def save(self, filename):
-        tf.keras.models.save_model(self.policy_model, filename)
+    def _save(self, filepath):
+        tf.saved_model.save(self.policy_model, filepath)
     
     def train(self, env, logger):
         optim_cnt = 0
+        score_list = []
+        score_list.append(0)
         for episode in range(self.N_EPISODE):
             total_reward = 0
+            
             state = env.reset()
             for t in itertools.count():
-                action = self._choose_action(state)
-                next_state, reward, done, _ = env.step(action)
-                total_reward += reward
-                self._update_replay_memory((state, action, reward, next_state, done))
-                self._optimize(done)
-                state = next_state
+                if env.timer.tick() % 1 == 0:
+                    action = self._choose_action(state)
+                    next_state, reward, done, _ = env.step(action)
+                    total_reward += reward
+                    self._update_replay_memory((state, action, reward, next_state))
+                    self._optimize()
+                    state = next_state
+                    if done:
+                        break
+                    
+            if episode % self.TARGET_UPDATE == 0:
+                self.target_model.set_weights(self.policy_model.get_weights())
+            
             optim_cnt += t
             score = env.unwrapped.game.get_score()
-            logger.info(f"{episode},{optim_cnt},{total_reward:.1f},{score},{self.epsilon.p:.6f}")
             
+            if (score > max(score_list)) and score > 150:
+                self._save(filepath=f'./models/DoubleDQN_ep:{episode}')
+                print('saving model')
                 
+            score_list.append(score)
+            
+            logger.info(f"{episode},{optim_cnt},{total_reward:.1f},{score},{self.epsilon.p:.6f}")
+            # print(f"episode:{episode} | total_reward: {total_reward:.1f} | score: {score} | epsilon:{self.epsilon.p:.6f}")
+            
+class DoubleDQN(DQN):
+    def __init__(self, n_actions, batch_norm=False):
+        super().__init__(n_actions, batch_norm)
+    
+    def _optimize(self):
+        if len(self.replay_memory) < self.MIN_MEMORY:
+            return
+        
+        batch = random.sample(self.replay_memory, self.BATCH_SIZE)
+        states = np.array([transition[0] for transition in batch])/255
+        new_states = np.array([transition[3] for transition in batch])/255
+        
+        qs_list = self.policy_model.predict(states)
+        
+        # predict action with policy model
+        new_qs_list = self.policy_model.predict(new_states) # Q list with shape(128, 3)
+        predicted_action = np.argmax(new_qs_list, axis=1)
+        
+        # evaluate action with target model
+        new_qs_target_state = np.array(self.target_model.predict(new_states))
+        
+        for index, (state, action, reward, next_state) in enumerate(batch):
+            qs_list[index][action] = (1 - self.GAMMA) * qs_list[index][action] + self.GAMMA * (reward + new_qs_target_state[index][predicted_action[index]] * self.DISCOUNT)
+            
+        self.policy_model.fit(states, qs_list, verbose=0)
+
+class DuelDQN(DQN):
+    def __init__(self, n_actions, batch_norm=False):
+        super().__init__(n_actions, batch_norm)
+    
+    def _init_model(self):
+        self.policy_model = DuelNet(self.n_actions, self.LR, self.batch_norm)
+        self.target_model = DuelNet(self.n_actions, self.LR, self.batch_norm)
+        self.target_model.set_weights(self.policy_model.get_weights())
+    
