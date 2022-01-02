@@ -45,9 +45,16 @@ class DQN(HyperParam):
         qs_list = self.policy_model.predict(states)
         new_qs_list = self.target_model.predict(new_states)
         
-        for index, (state, action, reward, next_state) in enumerate(batch):
-            qs_list[index][action] = (1 - self.GAMMA) * qs_list[index][action] + self.GAMMA * (reward + np.max(new_qs_list[index]) * self.DISCOUNT)
+        # for index, (state, action, reward, next_state, done) in enumerate(batch):
+        #     qs_list[index][action] = (1 - self.GAMMA) * qs_list[index][action] + self.GAMMA * (reward + np.max(new_qs_list[index]) * self.DISCOUNT)
         
+        # Calculate Q value
+        for index, (state, action, reward, next_state, done) in enumerate(batch):
+            if not done:
+                qs_list[index][action] = reward + self.GAMMA * (np.max(new_qs_list[index]) * self.DISCOUNT)
+            else:
+                qs_list[index][action] = reward
+            
         self.policy_model.fit(states, qs_list, verbose=0)
     
     def _save(self, filepath):
@@ -66,7 +73,7 @@ class DQN(HyperParam):
                     action = self._choose_action(state)
                     next_state, reward, done, _ = env.step(action)
                     total_reward += reward
-                    self._update_replay_memory((state, action, reward, next_state))
+                    self._update_replay_memory((state, action, reward, next_state, done))
                     self._optimize()
                     state = next_state
                     if done:
@@ -99,17 +106,24 @@ class DoubleDQN(DQN):
         states = np.array([transition[0] for transition in batch])/255
         new_states = np.array([transition[3] for transition in batch])/255
         
+        # Q value
         qs_list = self.policy_model.predict(states)
         
+        # Expect Q value
         # predict action with policy model
-        new_qs_list = self.policy_model.predict(new_states) # Q list with shape(128, 3)
-        predicted_action = np.argmax(new_qs_list, axis=1)
+        evaluated_action = np.argmax(self.policy_model.predict(new_states), axis=1)
+        # Output: action of new states
         
         # evaluate action with target model
         new_qs_target_state = np.array(self.target_model.predict(new_states))
+        # Output: Q value of new states
         
-        for index, (state, action, reward, next_state) in enumerate(batch):
-            qs_list[index][action] = (1 - self.GAMMA) * qs_list[index][action] + self.GAMMA * (reward + new_qs_target_state[index][predicted_action[index]] * self.DISCOUNT)
+        # Calculate Q value
+        for index, (state, action, reward, next_state, done) in enumerate(batch):
+            if not done:
+                qs_list[index][action] = reward + self.GAMMA * (new_qs_target_state[index][evaluated_action[index]] * self.DISCOUNT)
+            else:
+                qs_list[index][action] = reward
             
         self.policy_model.fit(states, qs_list, verbose=0)
 
