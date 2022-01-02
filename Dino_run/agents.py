@@ -5,7 +5,7 @@ import tensorflow as tf
 import numpy as np
 
 from model import Net, DuelNet
-from utils import LinearAnneal
+from utils import LinearAnneal, huber_loss
 from parameters import HyperParam
 
 class DQN(HyperParam):
@@ -24,38 +24,27 @@ class DQN(HyperParam):
     
     def _update_replay_memory(self, transitions):
         self.replay_memory.append(transitions)
-        
-    def _get_qs(self, state):
-        return self.policy_model.predict(np.array(np.expand_dims(state, axis=0))/255)[0]
     
     def _choose_action(self, state):
         if random.random() > self.epsilon.anneal():
-            return np.argmax(self._get_qs(state))
+            return np.argmax(self.policy_model.predict(tf.expand_dims(state, axis=0)/255))
         return np.random.randint(0, self.n_actions)
     
     def _optimize(self):
-        if len(self.replay_memory) < self.MIN_MEMORY:
+        if len(self.replay_memory) < self.BATCH_SIZE:
             return
-        
+
         batch = random.sample(self.replay_memory, self.BATCH_SIZE)
         states = np.array([transition[0] for transition in batch])/255
+        next_states = np.array([transition[3] for transition in batch])/255
         
-        new_states = np.array([transition[3] for transition in batch])/255
+        Qs = self.policy_model.predict(states)
+        Qs_next = self.target_model.predict(next_states)
         
-        qs_list = self.policy_model.predict(states)
-        new_qs_list = self.target_model.predict(new_states)
+        for i, (_, action, reward, _,) in enumerate(batch):
+            Qs[i][action] = (reward + self.GAMMA * tf.reduce_max(Qs_next[i])) #(1 - self.RL_LR) * Qs[i][action] + self.RL_LR * 
         
-        # for index, (state, action, reward, next_state, done) in enumerate(batch):
-        #     qs_list[index][action] = (1 - self.GAMMA) * qs_list[index][action] + self.GAMMA * (reward + np.max(new_qs_list[index]) * self.DISCOUNT)
-        
-        # Calculate Q value
-        for index, (state, action, reward, next_state, done) in enumerate(batch):
-            if not done:
-                qs_list[index][action] = reward + self.GAMMA * (np.max(new_qs_list[index]) * self.DISCOUNT)
-            else:
-                qs_list[index][action] = reward
-            
-        self.policy_model.fit(states, qs_list, verbose=0)
+        self.policy_model.fit(states, Qs, verbose=0)
     
     def _save(self, filepath):
         tf.saved_model.save(self.policy_model, filepath)
@@ -64,16 +53,16 @@ class DQN(HyperParam):
         optim_cnt = 0
         score_list = []
         score_list.append(0)
-        for episode in range(self.N_EPISODE):
+        for episode in range(1, self.N_EPISODE+1):
             total_reward = 0
-            
-            state = env.reset()
+            env.reset()
+            state = np.array(env.reset())
             for t in itertools.count():
                 if env.timer.tick() % 1 == 0:
                     action = self._choose_action(state)
                     next_state, reward, done, _ = env.step(action)
                     total_reward += reward
-                    self._update_replay_memory((state, action, reward, next_state, done))
+                    self._update_replay_memory((state, action, reward, next_state))
                     self._optimize()
                     state = next_state
                     if done:
@@ -85,8 +74,8 @@ class DQN(HyperParam):
             optim_cnt += t
             score = env.unwrapped.game.get_score()
             
-            if (score > max(score_list)) and score > 150:
-                self._save(filepath=f'./models/DoubleDQN_ep:{episode}')
+            if ((score > max(score_list)) and (score > 150)) or (episode == self.N_EPISODE+1):
+                self._save(filepath=f'./models/DQN_ep:{episode}')
                 print('saving model')
                 
             score_list.append(score)
@@ -104,28 +93,25 @@ class DoubleDQN(DQN):
         
         batch = random.sample(self.replay_memory, self.BATCH_SIZE)
         states = np.array([transition[0] for transition in batch])/255
-        new_states = np.array([transition[3] for transition in batch])/255
+        next_states = np.array([transition[3] for transition in batch])/255
         
         # Q value
-        qs_list = self.policy_model.predict(states)
+        Qs = self.policy_model.predict(states)
         
         # Expect Q value
         # predict action with policy model
-        evaluated_action = np.argmax(self.policy_model.predict(new_states), axis=1)
+        evaluated_action = np.argmax(self.policy_model.predict(next_states), axis=1)
         # Output: action of new states
         
         # evaluate action with target model
-        new_qs_target_state = np.array(self.target_model.predict(new_states))
+        Qs_next_target_state = np.array(self.target_model.predict(next_states))
         # Output: Q value of new states
         
         # Calculate Q value
-        for index, (state, action, reward, next_state, done) in enumerate(batch):
-            if not done:
-                qs_list[index][action] = reward + self.GAMMA * (new_qs_target_state[index][evaluated_action[index]] * self.DISCOUNT)
-            else:
-                qs_list[index][action] = reward
+        for index, (state, action, reward, next_state) in enumerate(batch):
+            Qs[index][action] = reward + self.GAMMA * Qs_next_target_state[index][evaluated_action[index]]
             
-        self.policy_model.fit(states, qs_list, verbose=0)
+        self.policy_model.fit(states, Qs, verbose=0)
 
 class DuelDQN(DQN):
     def __init__(self, n_actions, batch_norm=False):

@@ -9,7 +9,7 @@ from agents import DQN, DuelDQN, DoubleDQN
 formatter = logging.Formatter(r'"%(asctime)s",%(message)s')
 logger = logging.getLogger("dino-rl")
 logger.setLevel(logging.INFO)
-fh = logging.FileHandler("G:/Code/Python/GitHub/Final-RL-Project/Dino_run/log/Batch256.csv")
+fh = logging.FileHandler("G:/Code/Python/GitHub/Final-RL-Project/Dino_run/log/DQN.csv")
 fh.setFormatter(formatter)
 logger.addHandler(fh)
 
