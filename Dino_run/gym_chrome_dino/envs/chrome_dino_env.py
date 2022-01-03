@@ -27,7 +27,7 @@ class ChromeDinoEnv(gym.Env):
         self.observation_space = spaces.Box(
             low=0, high=255, shape=(150, 600, 3), dtype=np.uint8
         )
-        self.action_space = spaces.Discrete(3)
+        self.action_space = spaces.Discrete(2)
         self.gametime_reward = 0.1
         self.gameover_penalty = -1
         self.current_frame = self.observation_space.low

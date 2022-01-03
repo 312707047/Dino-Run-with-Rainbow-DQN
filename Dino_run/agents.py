@@ -8,6 +8,9 @@ from model import Net, DuelNet
 from utils import LinearAnneal, huber_loss
 from parameters import HyperParam
 
+np.random.seed(87)
+tf.random.set_seed(87)
+
 class DQN(HyperParam):
     def __init__(self, n_actions, batch_norm=False):
         self.n_actions = n_actions
@@ -27,11 +30,11 @@ class DQN(HyperParam):
     
     def _choose_action(self, state):
         if random.random() > self.epsilon.anneal():
-            return np.argmax(self.policy_model.predict(tf.expand_dims(state, axis=0)/255))
+            return np.argmax(self.policy_model.predict(np.expand_dims(state, axis=0)/255))
         return np.random.randint(0, self.n_actions)
     
     def _optimize(self):
-        if len(self.replay_memory) < self.BATCH_SIZE:
+        if len(self.replay_memory) < self.BATCH_SIZE * 3:
             return
 
         batch = random.sample(self.replay_memory, self.BATCH_SIZE)
@@ -42,7 +45,7 @@ class DQN(HyperParam):
         Qs_next = self.target_model.predict(next_states)
         
         for i, (_, action, reward, _,) in enumerate(batch):
-            Qs[i][action] = (reward + self.GAMMA * tf.reduce_max(Qs_next[i])) #(1 - self.RL_LR) * Qs[i][action] + self.RL_LR * 
+            Qs[i][action] = (1-self.GAMMA) * Qs[i][action] + self.GAMMA * (reward + self.DISCOUNT * np.max(Qs_next[i])) #(1 - self.RL_LR) * Qs[i][action] + self.RL_LR * 
         
         self.policy_model.fit(states, Qs, verbose=0)
     
@@ -74,8 +77,8 @@ class DQN(HyperParam):
             optim_cnt += t
             score = env.unwrapped.game.get_score()
             
-            if ((score > max(score_list)) and (score > 150)) or (episode == self.N_EPISODE+1):
-                self._save(filepath=f'./models/DQN_ep:{episode}')
+            if ((score > max(score_list)) and (score > 150)) or (episode == self.N_EPISODE):
+                self._save(filepath='DQN')
                 print('saving model')
                 
             score_list.append(score)
@@ -104,12 +107,12 @@ class DoubleDQN(DQN):
         # Output: action of new states
         
         # evaluate action with target model
-        Qs_next_target_state = np.array(self.target_model.predict(next_states))
+        Qs_next = np.array(self.target_model.predict(next_states))
         # Output: Q value of new states
         
         # Calculate Q value
-        for index, (state, action, reward, next_state) in enumerate(batch):
-            Qs[index][action] = reward + self.GAMMA * Qs_next_target_state[index][evaluated_action[index]]
+        for i, (_, action, reward, _) in enumerate(batch):
+            Qs[i][action] = (1 - self.GAMMA) * Qs[i][action] + self.GAMMA * (reward + self.DISCOUNT * Qs_next[i][evaluated_action[i]])
             
         self.policy_model.fit(states, Qs, verbose=0)
 
