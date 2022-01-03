@@ -39,15 +39,26 @@ class DQN(HyperParam):
 
         batch = random.sample(self.replay_memory, self.BATCH_SIZE)
         states = np.array([transition[0] for transition in batch])/255
+        actions = np.array([transition[1] for transition in batch])
+        rewards = np.array([transition[2] for transition in batch])
         next_states = np.array([transition[3] for transition in batch])/255
         
         Qs = self.policy_model.predict(states)
         Qs_next = self.target_model.predict(next_states)
         
-        for i, (_, action, reward, _,) in enumerate(batch):
-            Qs[i][action] = (1-self.GAMMA) * Qs[i][action] + self.GAMMA * (reward + self.DISCOUNT * np.max(Qs_next[i])) #(1 - self.RL_LR) * Qs[i][action] + self.RL_LR * 
+        Qs_next_max = tf.reduce_max(Qs_next, axis=1, keepdims=True).numpy()
+        Qs_target = np.copy(Qs)
         
-        self.policy_model.fit(states, Qs, verbose=0)
+        for i in range(self.BATCH_SIZE):
+            Qs_target[i, actions[i]] = rewards[i] + self.DISCOUNT * Qs_next_max[i]
+        
+        # for those who wants to tune learning rate:    
+        # for i in range(self.BATCHSIZE):
+            # Qs_target[i, actions[i]] = (1 - lr) * Qs_target[i, actions[i]] + lr * (reward[i] + self.DISCOUNT * Qs_next_max[i])
+        
+        self.policy_model.train_on_batch(states, Qs_target)
+        
+        
     
     def _save(self, filepath):
         tf.saved_model.save(self.policy_model, filepath)
@@ -77,14 +88,13 @@ class DQN(HyperParam):
             optim_cnt += t
             score = env.unwrapped.game.get_score()
             
-            if ((score > max(score_list)) and (score > 150)) or (episode == self.N_EPISODE):
+            if (score > max(score_list)) and (score > 150):
                 self._save(filepath='DQN')
                 print('saving model')
                 
             score_list.append(score)
             
             logger.info(f"{episode},{optim_cnt},{total_reward:.1f},{score},{self.epsilon.p:.6f}")
-            # print(f"episode:{episode} | total_reward: {total_reward:.1f} | score: {score} | epsilon:{self.epsilon.p:.6f}")
             
 class DoubleDQN(DQN):
     def __init__(self, n_actions, batch_norm=False):
@@ -96,6 +106,8 @@ class DoubleDQN(DQN):
         
         batch = random.sample(self.replay_memory, self.BATCH_SIZE)
         states = np.array([transition[0] for transition in batch])/255
+        actions = np.array([transition[1] for transition in batch])
+        rewards = np.array([transition[2] for transition in batch])
         next_states = np.array([transition[3] for transition in batch])/255
         
         # Q value
@@ -110,11 +122,13 @@ class DoubleDQN(DQN):
         Qs_next = np.array(self.target_model.predict(next_states))
         # Output: Q value of new states
         
+        Qs_target = np.copy(Qs)
+        
         # Calculate Q value
-        for i, (_, action, reward, _) in enumerate(batch):
-            Qs[i][action] = (1 - self.GAMMA) * Qs[i][action] + self.GAMMA * (reward + self.DISCOUNT * Qs_next[i][evaluated_action[i]])
+        for i in range(self.BATCH_SIZE):
+            Qs_target[i, actions[i]] = rewards[i] + self.DISCOUNT * Qs_next[i][evaluated_action[i]]
             
-        self.policy_model.fit(states, Qs, verbose=0)
+        self.policy_model.train_on_batch(states, Qs_target)
 
 class DuelDQN(DQN):
     def __init__(self, n_actions, batch_norm=False):
