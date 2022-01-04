@@ -2,7 +2,6 @@ class HyperParam:
     MEMORY_SIZE = 30000
     MIN_MEMORY = 10000
     BATCH_SIZE = 128 #128
-    GAMMA = 0.99
     DISCOUNT = 0.95
     EPS_INIT = 1e-1
     EPS_END = 1e-4

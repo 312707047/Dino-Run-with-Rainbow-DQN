@@ -101,7 +101,7 @@ class DoubleDQN(DQN):
         super().__init__(n_actions, batch_norm)
     
     def _optimize(self):
-        if len(self.replay_memory) < self.MIN_MEMORY:
+        if len(self.replay_memory) < self.BATCH_SIZE * 3:
             return
         
         batch = random.sample(self.replay_memory, self.BATCH_SIZE)
