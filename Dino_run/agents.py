@@ -89,12 +89,12 @@ class DQN(HyperParam):
             score = env.unwrapped.game.get_score()
             
             if (score > max(score_list)) and (score > 150):
-                self._save(filepath='DQN')
-                print('saving model')
+                self._save(filepath='DQN_higest')
                 
             score_list.append(score)
             
             logger.info(f"{episode},{optim_cnt},{total_reward:.1f},{score},{self.epsilon.p:.6f}")
+        self._save(filepath='DQN_lastest')
             
 class DoubleDQN(DQN):
     def __init__(self, n_actions, batch_norm=False):
