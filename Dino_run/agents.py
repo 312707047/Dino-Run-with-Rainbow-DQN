@@ -95,7 +95,7 @@ class DQN(HyperParam):
             score_list.append(score)
             
             logger.info(f"{episode},{optim_cnt},{total_reward:.1f},{score},{self.epsilon.p:.6f}")
-        self._save(filepath='PERDQN_lastest')
+        self._save(filepath='PER_lastest')
             
 class DoubleDQN(DQN):
     def __init__(self, n_actions, batch_norm=False):
@@ -128,9 +128,8 @@ class DoubleDQN(DQN):
         
         # Calculate Q value
         for i in range(self.BATCH_SIZE):
-            if not dones[i]:
-                Qs_target[i, actions[i]] = rewards[i] + self.DISCOUNT * Qs_next[i, evaluated_action[i]]
-            Qs_target[i, actions[i]] = rewards[i]
+            Qs_target[i, actions[i]] = rewards[i] + self.DISCOUNT * Qs_next[i, evaluated_action[i]]
+
             
         self.policy_model.train_on_batch(states, Qs_target)
 
