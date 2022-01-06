@@ -5,7 +5,7 @@ import tensorflow as tf
 import numpy as np
 
 from model import Net, DuelNet
-from utils import LinearAnneal, huber_loss
+from utils import LinearAnneal, Memory, huber_loss
 from parameters import HyperParam
 
 np.random.seed(87)
@@ -42,6 +42,7 @@ class DQN(HyperParam):
         actions = np.array([transition[1] for transition in batch])
         rewards = np.array([transition[2] for transition in batch])
         next_states = np.array([transition[3] for transition in batch])/255
+        dones = np.array([transition[4] for transition in batch])
         
         Qs = self.policy_model.predict(states)
         Qs_next = self.target_model.predict(next_states)
@@ -76,7 +77,7 @@ class DQN(HyperParam):
                     action = self._choose_action(state)
                     next_state, reward, done, _ = env.step(action)
                     total_reward += reward
-                    self._update_replay_memory((state, action, reward, next_state))
+                    self._update_replay_memory((state, action, reward, next_state, done))
                     self._optimize()
                     state = next_state
                     if done:
@@ -89,12 +90,12 @@ class DQN(HyperParam):
             score = env.unwrapped.game.get_score()
             
             if (score > max(score_list)) and (score > 150):
-                self._save(filepath='DQN_higest')
+                self._save(filepath='PERDQN_higest')
                 
             score_list.append(score)
             
             logger.info(f"{episode},{optim_cnt},{total_reward:.1f},{score},{self.epsilon.p:.6f}")
-        self._save(filepath='DQN_lastest')
+        self._save(filepath='PERDQN_lastest')
             
 class DoubleDQN(DQN):
     def __init__(self, n_actions, batch_norm=False):
@@ -109,6 +110,7 @@ class DoubleDQN(DQN):
         actions = np.array([transition[1] for transition in batch])
         rewards = np.array([transition[2] for transition in batch])
         next_states = np.array([transition[3] for transition in batch])/255
+        dones = np.array([transition[4] for transition in batch])
         
         # Q value
         Qs = self.policy_model.predict(states)
@@ -126,7 +128,9 @@ class DoubleDQN(DQN):
         
         # Calculate Q value
         for i in range(self.BATCH_SIZE):
-            Qs_target[i, actions[i]] = rewards[i] + self.DISCOUNT * Qs_next[i][evaluated_action[i]]
+            if not dones[i]:
+                Qs_target[i, actions[i]] = rewards[i] + self.DISCOUNT * Qs_next[i, evaluated_action[i]]
+            Qs_target[i, actions[i]] = rewards[i]
             
         self.policy_model.train_on_batch(states, Qs_target)
 
@@ -138,4 +142,97 @@ class DuelDQN(DQN):
         self.policy_model = DuelNet(self.n_actions, self.LR, self.batch_norm)
         self.target_model = DuelNet(self.n_actions, self.LR, self.batch_norm)
         self.target_model.set_weights(self.policy_model.get_weights())
+
+class PERDQN(DQN):
+    def __init__(self, n_actions, batch_norm=False):
+        super().__init__(n_actions, batch_norm=batch_norm)
+        self.replay_memory = Memory(self.MEMORY_SIZE)
     
+    def _update_replay_memory(self, transitions):
+        self.replay_memory.store(transitions)
+    
+    def _optimize(self):
+        if len(self.replay_memory) < self.BATCH_SIZE * 3:
+            return
+        
+        tree_idx, batch = self.replay_memory.sample(self.BATCH_SIZE)
+        states = np.array([transition[0] for transition in batch])/255
+        actions = np.array([transition[1] for transition in batch])
+        rewards = np.array([transition[2] for transition in batch])
+        next_states = np.array([transition[3] for transition in batch])/255
+        dones = np.array([transition[4] for transition in batch])
+        
+        Qs = self.policy_model.predict(states)
+        Qs_target = np.copy(Qs)
+        
+        Qs_next = self.target_model.predict(next_states)
+        Qs_next_max = tf.reduce_max(Qs_next, axis=1, keepdims=True).numpy()
+        
+        for i in range(self.BATCH_SIZE):
+            Qs_target[i, actions[i]] = rewards[i] + self.DISCOUNT * Qs_next_max[i]
+        
+        errors = huber_loss(Qs, Qs_target)
+        self.replay_memory.batch_update(tree_idx, errors)
+        
+        self.policy_model.train_on_batch(states, Qs_target)
+
+class CERDQN(DQN):
+    def __init__(self, n_actions, batch_norm=False):
+        super().__init__(n_actions, batch_norm=batch_norm)
+    
+    def _optimize(self):
+        if len(self.replay_memory) < self.BATCH_SIZE * 3:
+            return
+
+        batch = random.sample(self.replay_memory, self.BATCH_SIZE-1)
+        batch.append(self.new_transition)
+        states = np.array([transition[0] for transition in batch])/255
+        actions = np.array([transition[1] for transition in batch])
+        rewards = np.array([transition[2] for transition in batch])
+        next_states = np.array([transition[3] for transition in batch])/255
+        dones = np.array([transition[4] for transition in batch])
+        
+        Qs = self.policy_model.predict(states)
+        Qs_next = self.target_model.predict(next_states)
+        
+        Qs_next_max = tf.reduce_max(Qs_next, axis=1, keepdims=True).numpy()
+        Qs_target = np.copy(Qs)
+        
+        for i in range(self.BATCH_SIZE):
+            Qs_target[i, actions[i]] = rewards[i] + self.DISCOUNT * Qs_next_max[i]
+        
+        self.policy_model.train_on_batch(states, Qs_target)
+            
+    def train(self, env, logger):
+        optim_cnt = 0
+        score_list = []
+        score_list.append(0)
+        for episode in range(1, self.N_EPISODE+1):
+            total_reward = 0
+            env.reset()
+            state = np.array(env.reset())
+            for t in itertools.count():
+                if env.timer.tick() % 1 == 0:
+                    action = self._choose_action(state)
+                    next_state, reward, done, _ = env.step(action)
+                    total_reward += reward
+                    self.new_transition = (state, action, reward, next_state, done)
+                    self._update_replay_memory(self.new_transition)
+                    self._optimize()
+                    state = next_state
+                    if done:
+                        break
+                    
+            if episode % self.TARGET_UPDATE == 0:
+                self.target_model.set_weights(self.policy_model.get_weights())
+            
+            optim_cnt += t
+            score = env.unwrapped.game.get_score()
+            
+            if (score > max(score_list)) and (score > 150):
+                self._save(filepath='CERDQN_higest')
+                
+            score_list.append(score)
+            
+            logger.info(f"{episode},{optim_cnt},{total_reward:.1f},{score},{self.epsilon.p:.6f}")
+        self._save(filepath='CERDQN_lastest')
