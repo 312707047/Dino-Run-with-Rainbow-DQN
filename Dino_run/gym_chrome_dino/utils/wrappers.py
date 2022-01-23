@@ -25,6 +25,17 @@ class WarpFrame(gym.ObservationWrapper):
 
     def observation(self, frame):
         frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+        
+        # add some change ---------------------------
+        frame[:40, 400:] = 0     # blackened background
+        # frame = frame[:-23, 85:] # cut off unecessary things like dino itself
+        frame = frame[:-23, :]
+        frame[frame > 200] = 0   # blackened background
+        frame[frame != 0] = 255  # whitened obstacle
+        frame = cv2.erode(frame, None, iterations=1)
+        frame = cv2.dilate(frame, None, iterations=1)
+        # -------------------------------------------
+        
         frame = cv2.resize(frame, (self.width, self.height), interpolation=cv2.INTER_AREA)
         return frame[:, :, None]
 
@@ -44,7 +55,9 @@ class TimerEnv(gym.Wrapper):
         return obs, reward, done, info
 
 def make_dino(env, timer=True, frame_stack=True):
-    env = WarpFrame(env, 160, 80)
+    # resize the env to (80, 80)
+    # env = WarpFrame(env, 160, 80)
+    env = WarpFrame(env, 84, 84)
     if timer:
         env = TimerEnv(env)
     if frame_stack:

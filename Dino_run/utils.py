@@ -1,5 +1,10 @@
 import numpy as np
+import random
 import tensorflow as tf
+import torch
+
+from collections import namedtuple
+from SumTree import SumSegmentTree, MinSegmentTree
 
 class LinearAnneal:
     """Decay a parameter linearly"""
@@ -22,143 +27,95 @@ def huber_loss(y_true, y_pred, clip_delta=1.0):
 
     return tf.where(cond, squared_loss, linear_loss)
 
-'''source:https://github.com/pythonlessons/Reinforcement_Learning/blob/master/06_CartPole-reinforcement-learning_PER_D3QN_CNN/PER.py'''
-class SumTree(object):
-    data_pointer = 0
-    
-    # Here we initialize the tree with all nodes = 0, and initialize the data with all values = 0
+
+class StateProcessor:
+    """Convert state image to tensor"""
+    def to_array(self, state):
+        state = np.array(state).transpose((2, 0, 1))
+        state = np.ascontiguousarray(state, dtype=np.float32) / 255
+        return state
+
+    def to_tensor(self, state):
+        state = self.to_array(state)
+        state = torch.from_numpy(state)
+        return state.unsqueeze(0)
+
+
+Transition = namedtuple('Transition', ('state', 'action', 'next_state', 'reward'))
+
+
+class ReplayMemory:
     def __init__(self, capacity):
-        # Number of leaf nodes (final nodes) that contains experiences
         self.capacity = capacity
+        self.memory = []
+        self.position = 0
+    
+    def push(self, *args):
+        if len(self.memory) < self.capacity:
+            self.memory.append(None)
+        self.memory[self.position] = Transition(*args)
+        self.position = (self.position + 1) % self.capacity
+    
+    def sample(self, batch_size):
+        return random.sample(self.memory, batch_size)
+    
+    def __len__(self):
+        return len(self.memory)
+
+
+class PrioritizedReplayMemory(ReplayMemory):
+    def __init__(self, capacity, alpha):
+        super().__init__(capacity)
+        self._alpha = alpha
         
-        # Generate the tree with all nodes values = 0
-        # To understand this calculation (2 * capacity - 1) look at the schema below
-        # Remember we are in a binary node (each node has max 2 children) so 2x size of leaf (capacity) - 1 (root node)
-        # Parent nodes = capacity - 1
-        # Leaf nodes = capacity
-        self.tree = np.zeros(2 * capacity - 1)
+        it_capacity = 1
+        while it_capacity < capacity:
+            it_capacity *= 2
         
-        # Contains the experiences (so the size of data is capacity)
-        self.data = np.zeros(capacity, dtype=object)
+        self._it_sum = SumSegmentTree(it_capacity)
+        self._it_min = MinSegmentTree(it_capacity)
+        self._max_priority = 1.0
     
+    def push(self, *args):
+        idx = self.position
+        super().push(*args)
+        self._it_sum[idx] = self._max_priority ** self._alpha
+        self._it_min[idx] = self._max_priority ** self._alpha
     
-    # Here we define function that will add our priority score in the sumtree leaf and add the experience in data:
-    def add(self, priority, data):
-        # Look at what index we want to put the experience
-        tree_index = self.data_pointer + self.capacity - 1
-
-        # Update data frame
-        self.data[self.data_pointer] = data
-
-        # Update the leaf
-        self.update (tree_index, priority)
-
-        # Add 1 to data_pointer
-        self.data_pointer += 1
-
-        if self.data_pointer >= self.capacity:  # If we're above the capacity, we go back to first index (we overwrite)
-            self.data_pointer = 0
-            
-    # Update the leaf priority score and propagate the change through tree
-    def update(self, tree_index, priority):
-        # Change = new priority score - former priority score
-        change = priority - self.tree[tree_index]
-        self.tree[tree_index] = priority
-
-        # then propagate the change through tree
-        # this method is faster than the recursive loop in the reference code
-        while tree_index != 0:
-            tree_index = (tree_index - 1) // 2
-            self.tree[tree_index] += change
-        
-    # Here build a function to get a leaf from our tree. So we'll build a function to get the leaf_index, priority value of that leaf and experience associated with that leaf index:
-    def get_leaf(self, v):
-        parent_index = 0
-
-        # the while loop is faster than the method in the reference code
-        while True:
-            left_child_index = 2 * parent_index + 1
-            right_child_index = left_child_index + 1
-
-            # If we reach bottom, end the search
-            if left_child_index >= len(self.tree):
-                leaf_index = parent_index
-                break
-            else: # downward search, always search for a higher priority node
-                if v <= self.tree[left_child_index]:
-                    parent_index = left_child_index
-                else:
-                    v -= self.tree[left_child_index]
-                    parent_index = right_child_index
-
-        data_index = leaf_index - self.capacity + 1
-
-        return leaf_index, self.tree[leaf_index], self.data[data_index]
+    def _sample_proportional(self, batch_size):
+        res = []
+        p_total = self._it_sum.sum(0, len(self.memory) - 1)
+        every_range_len = p_total / batch_size
+        for i in range(batch_size):
+            mass = random.random() * every_range_len + i * every_range_len
+            idx = self._it_sum.find_prefixsum_idx(mass)
+            res.append(idx)
+        return res
     
-    @property
-    def total_priority(self):
-        return self.tree[0] # Returns the root node
+    def sample(self, batch_size, beta):
+        assert beta > 0
 
-# Now we finished constructing our SumTree object, next we'll build a memory object.
-class Memory(object):  # stored as ( state, action, reward, next_state ) in SumTree
-    PER_e = 0.01  # Hyperparameter that we use to avoid some experiences to have 0 probability of being taken
-    PER_a = 0.6  # Hyperparameter that we use to make a tradeoff between taking only exp with high priority and sampling randomly
-    PER_b = 0.4  # importance-sampling, from initial value increasing to 1
-    
-    PER_b_increment_per_sampling = 0.001
-    
-    absolute_error_upper = 1.  # clipped abs error
+        idxes = self._sample_proportional(batch_size)
 
-    def __init__(self, capacity):
-        # Making the tree 
-        self.tree = SumTree(capacity)
-        
-    # Next, we define a function to store a new experience in our tree.
-    # Each new experience will have a score of max_prority (it will be then improved when we use this exp to train our DDQN).
-    def store(self, experience):
-        # Find the max priority
-        max_priority = np.max(self.tree.tree[-self.tree.capacity:])
+        weights = []
+        transitions = []
+        p_min = self._it_min.min() / self._it_sum.sum()
+        max_weight = (p_min * len(self.memory)) ** (-beta)
 
-        # If the max priority = 0 we can't put priority = 0 since this experience will never have a chance to be selected
-        # So we use a minimum priority
-        if max_priority == 0:
-            max_priority = self.absolute_error_upper
+        for idx in idxes:
+            p_sample = self._it_sum[idx] / self._it_sum.sum()
+            weight = (p_sample * len(self.memory)) ** (-beta)
+            weights.append(weight / max_weight)
+            transitions.append(self.memory[idx])
 
-        self.tree.add(max_priority, experience)   # set the max priority for new priority
-        
-    # Now we create sample function, which will be used to pick batch from our tree memory, which will be used to train our model.
-    # - First, we sample a minibatch of n size, the range [0, priority_total] into priority ranges.
-    # - Then a value is uniformly sampled from each range.
-    # - Then we search in the sumtree, for the experience where priority score correspond to sample values are retrieved from.
-    def sample(self, n):
-        # Create a minibatch array that will contains the minibatch
-        minibatch = []
+        return transitions, weights, idxes
 
-        b_idx = np.empty((n,), dtype=np.int32)
+    def update_priorities(self, idxes, priorities):
+        assert len(idxes) == len(priorities)
+        for idx, priority in zip(idxes, priorities):
+            assert priority > 0
+            assert 0 <= idx < len(self.memory)
+            self._it_sum[idx] = priority ** self._alpha
+            self._it_min[idx] = priority ** self._alpha
 
-        # Calculate the priority segment
-        # Here, as explained in the paper, we divide the Range[0, ptotal] into n ranges
-        priority_segment = self.tree.total_priority / n       # priority segment
-
-        for i in range(n):
-            # A value is uniformly sample from each range
-            a, b = priority_segment * i, priority_segment * (i + 1)
-            value = np.random.uniform(a, b)
-
-            # Experience that correspond to each value is retrieved
-            index, priority, data = self.tree.get_leaf(value)
-
-            b_idx[i]= index
-
-            minibatch.append([data[0],data[1],data[2],data[3],data[4]])
-
-        return b_idx, minibatch
-    
-    # Update the priorities on the tree
-    def batch_update(self, tree_idx, abs_errors):
-        abs_errors += self.PER_e  # convert to abs and avoid 0
-        clipped_errors = np.minimum(abs_errors, self.absolute_error_upper)
-        ps = np.power(clipped_errors, self.PER_a)
-
-        for ti, p in zip(tree_idx, ps):
-            self.tree.update(ti, p)
+            self._max_priority = max(self._max_priority, priority)
