@@ -1,3 +1,5 @@
+'''Pytorch version comes from: https://github.com/yzheng51/rl-dino-run'''
+
 import torch
 import gym
 import gym_chrome_dino
