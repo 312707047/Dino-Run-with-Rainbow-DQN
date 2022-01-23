@@ -68,7 +68,7 @@ def ConvBlock(x, batch_norm=False):
     return layers.Flatten()(x)
 
 def Net(n_actions, lr, batch_norm=False):
-    input = Input(shape=(80, 80, 4))
+    input = Input(shape=(84, 84, 4))
     x = ConvBlock(input, batch_norm)
     x = layers.Dense(512, activation='relu', kernel_initializer='he_uniform')(x)
     output = layers.Dense(n_actions, activation='linear', kernel_initializer='he_uniform')(x)
@@ -79,7 +79,7 @@ def Net(n_actions, lr, batch_norm=False):
     return model
 
 def DuelNet(n_actions, lr, batch_norm=False):
-    input = Input(shape=(80, 80, 4))
+    input = Input(shape=(84, 84, 4))
     x = ConvBlock(input, batch_norm)
     a = layers.Dense(512, activation='relu', kernel_initializer='he_uniform')(x)
     a = layers.Dense(n_actions, activation='linear', kernel_initializer='he_uniform')(a)

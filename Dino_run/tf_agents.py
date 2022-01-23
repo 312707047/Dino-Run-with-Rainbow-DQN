@@ -12,6 +12,7 @@ from utils import LinearAnneal
 from parameters import HyperParam
 
 np.random.seed(87)
+random.seed(87)
 tf.random.set_seed(87)
 
 class DQN(HyperParam):
