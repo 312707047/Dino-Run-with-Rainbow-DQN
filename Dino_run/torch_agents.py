@@ -7,8 +7,8 @@ import torch.nn.functional as F
 import torch.optim as optim
 
 from parameters import HyperParam
-from torch_model import Net, DuelNet
-from utils import Transition, ReplayMemory, LinearAnneal, StateProcessor
+from torch_model import Net, DuelNet, NoisyNet
+from utils import Transition, ReplayMemory, PrioritizedReplayMemory, LinearAnneal, StateProcessor
 
 
 random.seed(87)
@@ -23,6 +23,7 @@ class DQN(HyperParam):
         self.n_actions = n_actions
         self._memory_init()
         self._net_init(n_actions, batch_norm)
+        self._log_init()
         self.epsilon = LinearAnneal(self.EPS_INIT, self.EPS_END, self.EXPLORE_STEP)
         self.optimizer = optim.RMSprop(self.policy_net.parameters(), lr=self.LR)
     
@@ -64,7 +65,7 @@ class DQN(HyperParam):
         # put the state into the network and filter those action with the max q value
         q_next = torch.zeros(self.BATCH_SIZE, device=self.device)
         q_next[non_final_mask] = self.target_net(non_final_next_states).max(1)[0].detach()
-        expected_q = rewards + self.GAMMA * q_next
+        expected_q = rewards + self.DISCOUNT * q_next
 
         return expected_q.unsqueeze(1)
 
@@ -176,6 +177,68 @@ class DoubleDQN(DQN):
         next_a = torch.zeros(self.BATCH_SIZE, device=self.device, dtype=torch.long)
         next_a[non_final_mask] = self.policy_net(non_final_next_states).max(1)[1].detach()
 
-        expected_q = rewards + self.GAMMA * q_next[np.arange(self.BATCH_SIZE), next_a]
+        expected_q = rewards + self.DISCOUNT * q_next[np.arange(self.BATCH_SIZE), next_a]
 
         return expected_q.unsqueeze(1)
+
+
+class DQNPrioritized(DQN):
+    """
+    DQN with PER use a different experience replay pool which shows the importance
+    of each transition
+    """
+    def __init__(self, n_actions, device, name='PERDQN', batch_norm=False, alpha=0.6, beta=0.4, eps=1e-6):
+        # alpha, beta, eps are suggested in the paper
+        self.alpha = alpha
+        super().__init__(n_actions, device, batch_norm)
+        self.beta = LinearAnneal(beta, 1.0, self.EXPLORE_STEP)
+        self.eps = eps
+
+    def _memory_init(self):
+        self.memory = PrioritizedReplayMemory(self.MEMORY_SIZE, self.alpha)
+
+    def _optimize(self):
+        """Sample batch from experience replay pool and update the policy"""
+        if len(self.memory) < self.BATCH_SIZE:
+            return
+        transitions, weights, idxes = self.memory.sample(self.BATCH_SIZE, self.beta.anneal())
+        batch = Transition(*zip(*transitions))
+
+        states = torch.cat(batch.state)
+        actions = torch.cat(batch.action)
+        rewards = torch.cat(batch.reward)
+        weights = torch.tensor(weights, dtype=torch.float32, device=self.device)
+
+        q = self._q(states, actions)
+        expected_q = self._expected_q(batch.next_state, rewards)
+
+        # update the priority of each transition
+        td_error = expected_q - q
+        new_priorities = torch.abs(td_error) + self.eps
+        self.memory.update_priorities(idxes, new_priorities.flatten())
+
+        # Compute Huber loss
+        loss = F.smooth_l1_loss(q, expected_q, reduction='none')
+        loss = (weights * loss).mean()
+
+        # Optimize the model
+        self.optimizer.zero_grad()
+        loss.backward()
+        for param in self.policy_net.parameters():
+            param.grad.data.clamp_(-1, 1)
+        self.optimizer.step()
+        
+
+class NoisyDQN(DQN):
+    def __init__(self, n_actions, device, name='NoisyDQN', batch_norm=False):
+        super().__init__(n_actions, device, name, batch_norm)
+
+    def _net_init(self, n_actions, batch_norm):
+        super()._net_init(n_actions, batch_norm)
+        self.policy_net = NoisyNet(n_actions, batch_norm).to(self.device)
+        self.target_net = NoisyNet(n_actions, batch_norm).to(self.device)
+        self._update_target()
+        self.target_net.eval()
+        
+    def _choose_action(self, state):
+        return self.policy_net(state).max(1)[1].view(1, 1)
