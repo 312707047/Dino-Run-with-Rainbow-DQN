@@ -4,7 +4,7 @@ import torch
 import gym
 import gym_chrome_dino
 from gym_chrome_dino.utils.wrappers import make_dino
-from torch_agents import DQN, DoubleDQN, DuelDQN, NoisyDQN, DQNPrioritized
+from torch_agents import DQN, DoubleDQN, DuelDQN, NoisyDQN, DQNPrioritized, RainbowDQN
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -38,8 +38,8 @@ n_actions = env.action_space.n
 
 
 # ----------- PER DQN ---------------
-per_dqn = DQNPrioritized(n_actions, device)
-per_dqn.train(env)
+# per_dqn = DQNPrioritized(n_actions, device)
+# per_dqn.train(env)
 # per_dqn.load("./trained/dqn.pkl")
 # per_dqn.test(env)
 
@@ -49,6 +49,14 @@ per_dqn.train(env)
 # noisy_dqn.train(env)
 # noisy_dqn.load("G:/Code/Python/GitHub/Final-RL-Project/NoisyDQN_model.pkl")
 # noisy_dqn.test(env)
+
+
+# ----------- Noisy DQN ----------------
+rainbow_dqn = RainbowDQN(n_actions, device)
+rainbow_dqn.train(env)
+# rainbow_dqn.load("G:/Code/Python/GitHub/Final-RL-Project/RainbowDQN_model.pkl")
+# rainbow_dqn.test(env)
+
 
 env.render(mode="rgb_array")
 env.close()

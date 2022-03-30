@@ -109,3 +109,21 @@ class NoisyNet(ConvBlock):
         x = super().forward(x)
         x = torch.relu(self.noisy_1(x))
         return self.output(x)
+
+class RainbowNet(ConvBlock):
+    def __init__(self, n_actions, batch_norm=False):
+        super().__init__(batch_norm)
+        self.a_1 = NoisyFactorizedLinear(3136, 512)
+        self.a_2 = NoisyFactorizedLinear(512, n_actions)
+        self.v_1 = NoisyFactorizedLinear(3136, 512)
+        self.v_2 = NoisyFactorizedLinear(512, 1)
+    
+    def forward(self, x):
+        x = super().forward(x)
+        a = torch.relu(self.a_1(x))
+        a = self.a_2(a)
+        
+        v = torch.relu(self.v_1(x))
+        v = self.v_2(v).expand_as(a)
+        
+        return v + a - a.mean(1).unsqueeze(1).expand_as(a)

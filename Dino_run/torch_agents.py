@@ -7,7 +7,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 
 from parameters import HyperParam
-from torch_model import Net, DuelNet, NoisyNet
+from torch_model import Net, DuelNet, NoisyNet, RainbowNet
 from utils import Transition, ReplayMemory, PrioritizedReplayMemory, LinearAnneal, StateProcessor
 
 
@@ -240,5 +240,19 @@ class NoisyDQN(DQN):
         self._update_target()
         self.target_net.eval()
         
+    def _choose_action(self, state):
+        return self.policy_net(state).max(1)[1].view(1, 1)
+
+
+class RainbowDQN(DoubleDQN):
+    def __init__(self, n_actions, device, name='RainbowDQN', batch_norm=False):
+        super().__init__(n_actions, device, name, batch_norm)
+    
+    def _net_init(self, n_actions, batch_norm):
+        self.policy_net = RainbowNet(n_actions, batch_norm).to(self.device)
+        self.target_net = RainbowNet(n_actions, batch_norm).to(self.device)
+        self._update_target()
+        self.target_net.eval()
+    
     def _choose_action(self, state):
         return self.policy_net(state).max(1)[1].view(1, 1)
