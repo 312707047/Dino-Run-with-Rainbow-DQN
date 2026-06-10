@@ -1,64 +1,63 @@
-# Dino Run with Rainbow DQN and Variants
+# Dino Run with Rainbow DQN
 
-## 🦖 Overview
+Chrome Dino reinforcement learning project comparing Deep Q-Network variants up to Rainbow DQN.
 
-This project implements the classic Chrome Dino Run game using various Deep Q-Network (DQN) variants, culminating in the Rainbow DQN algorithm. It showcases the power of reinforcement learning in mastering simple yet challenging games.
+The project implements a Chrome Dino Gym environment workflow and several DQN agents, then compares how different algorithmic improvements affect training performance.
 
-## 🌈 Features
+## What Is Included
 
-- 🎮 Implementation of Chrome's Dino Run game
-- 🧠 Multiple DQN variants:
-  - Double DQN
-  - Dueling DQN
-  - DQN with Cyclic Exploration Rate (CER)
-  - Noisy DQN
-  - Prioritized Experience Replay (PER) DQN
-  - Rainbow DQN (combining all above improvements)
-- 📊 Performance visualization and analysis
-- 🔢 Comparative study of different DQN variants
+- Chrome Dino Gym environment wrapper under `Dino_run/gym_chrome_dino/`
+- PyTorch DQN agents in `Dino_run/torch_agents.py`
+- Model definitions in `Dino_run/torch_model.py`
+- Rainbow DQN training entry point in `Dino_run/torch_main.py`
+- Training logs, plots, and saved model artifacts under `Dino_run/log/` and `Dino_run/models/`
+- Project report files: `Dino run.pdf`, `Dino run.docx`, and `107302002.pptx`
 
-## 🛠️ Installation
+## Implemented Agents
 
-Ensure you have Python 3.7+ installed. Then follow these steps:
+- DQN
+- Double DQN
+- Dueling DQN
+- CER DQN
+- Noisy DQN
+- Prioritized Experience Replay DQN
+- Rainbow DQN
+
+## Installation
 
 ```bash
-# Clone the repository
-git clone https://github.com/312707047/Dino-Run-with-Rainbow-DQN
+git clone https://github.com/novis10813/Dino-Run-with-Rainbow-DQN.git
 cd Dino-Run-with-Rainbow-DQN
-
-# Install the required packages
-pip install -r requirements.txt
 ```
 
-## 🖥️ Usage
+This repository was originally developed with Python 3.7-era RL and browser automation dependencies. There is no current `requirements.txt`, so dependency setup may need adjustment for your local Python, PyTorch, Selenium, Chrome, and ChromeDriver versions.
 
-To run the Dino Run game with a specific DQN variant, please modify `Dino_run/torch_main.py`
+## Usage
 
-## 🧠 Models
+The main PyTorch entry point is:
 
-### Double DQN
-Reduces overestimation bias in Q-value estimation.
+```bash
+cd Dino_run
+python torch_main.py
+```
 
-### Dueling DQN
-Separates state-value and advantage functions for more efficient learning.
+By default, `torch_main.py` creates the Chrome Dino environment and trains `RainbowDQN`. To run a different agent, edit the commented agent blocks in `Dino_run/torch_main.py`.
 
-### CER DQN 
-Implements a CER DQN for taking every current observation to update the agent.
+The environment uses Chrome/ChromeDriver for browser-based gameplay. The repository includes Windows ChromeDriver artifacts, but you may need to replace them with a driver that matches your operating system and Chrome version.
 
-### Noisy DQN
-Adds parametric noise to the weights for better exploration.
+## Results
 
-### PER DQN (Prioritized Experience Replay)
-Prioritizes important transitions in the replay buffer for more efficient learning.
+Training logs and plots are available under `Dino_run/log/`, including per-agent CSV files and comparison images.
 
-### Rainbow DQN
-Combines all the above improvements for state-of-the-art performance.
+## References
 
-## 📚 References
+1. Mnih et al. (2015), "Human-level control through deep reinforcement learning".
+2. Van Hasselt, Guez, and Silver (2016), "Deep Reinforcement Learning with Double Q-learning".
+3. Wang et al. (2016), "Dueling Network Architectures for Deep Reinforcement Learning".
+4. Fortunato et al. (2017), "Noisy Networks for Exploration".
+5. Schaul et al. (2015), "Prioritized Experience Replay".
+6. Hessel et al. (2017), "Rainbow: Combining Improvements in Deep Reinforcement Learning".
 
-1. Mnih, V., et al. (2015). Human-level control through deep reinforcement learning. Nature, 518(7540), 529-533.
-2. Van Hasselt, H., Guez, A., & Silver, D. (2016). Deep Reinforcement Learning with Double Q-learning. AAAI.
-3. Wang, Z., et al. (2016). Dueling Network Architectures for Deep Reinforcement Learning. ICML.
-4. Fortunato, M., et al. (2017). Noisy Networks for Exploration. arXiv preprint arXiv:1706.10295.
-5. Schaul, T., et al. (2015). Prioritized Experience Replay. arXiv preprint arXiv:1511.05952.
-6. Hessel, M., et al. (2017). Rainbow: Combining Improvements in Deep Reinforcement Learning. arXiv preprint arXiv:1710.02298.
+## Status
+
+This is an educational reinforcement learning project and experiment archive. It is useful for reading agent implementations and comparing DQN variants, but may require dependency updates before it runs on a modern machine.
